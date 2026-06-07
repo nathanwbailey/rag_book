@@ -1,0 +1,19 @@
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+.python-version
+
+# Secrets
+.env
+
+# Data & generated index
+books/*
+!books/.gitkeep
+storage/
+
+# Local model / HF caches
+.cache/
+
+# Claude Code local settings
+.claude/settings.local.json
