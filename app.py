@@ -1,8 +1,14 @@
-"""Streamlit chat UI for the agentic book RAG.
+"""Streamlit chat UI for the book RAG.
 
-The agent (Claude) is built once per session and reused, with a persistent
-``Context`` so multi-turn chat keeps its history. Retrieved passages from each
-turn are shown in a "Sources" expander.
+Two retrieval modes share one ``RagEngine`` (built once per session):
+
+- **Simple (default):** infer a structured book/chapter filter from the
+  question, run the hybrid search under it, synthesize a grounded answer. Chat
+  memory is the visible transcript.
+- **Agentic (opt-in):** a tool-calling agent drives retrieval, with a persistent
+  ``Context`` for memory. Built lazily, only when the mode is enabled.
+
+Retrieved passages from each turn are shown in a "Sources" expander.
 """
 
 from __future__ import annotations
@@ -15,7 +21,9 @@ from llama_index.core.workflow import Context
 
 from rag_book import config
 from rag_book.agent import build_agent, run_streaming
+from rag_book.engine import build_engine, run_simple_streaming
 from rag_book.ingest import ingest
+from rag_book.session import load_session, reset_session, save_session
 
 st.set_page_config(page_title="Book RAG", page_icon="📚", layout="wide")
 
@@ -26,12 +34,34 @@ def _indexed_books() -> list[str]:
     return []
 
 
+def _ensure_engine() -> None:
+    """Build the shared retrieval engine once and restore the transcript."""
+    if "engine" not in st.session_state:
+        st.session_state.engine = build_engine()
+        restored = load_session()  # transcript only; no agent Context needed
+        st.session_state.messages = restored[0] if restored is not None else []
+
+
 def _ensure_agent() -> None:
+    """Build the tool-calling agent + Context lazily (agentic mode only)."""
     if "bundle" not in st.session_state:
-        bundle = build_agent()
+        bundle = build_agent(st.session_state.engine)
         st.session_state.bundle = bundle
-        st.session_state.ctx = Context(bundle.agent)
-        st.session_state.messages = []
+        # Resume the saved agent memory if one matches; else fresh Context.
+        restored = load_session(bundle.agent)
+        if restored is not None and restored[1] is not None:
+            st.session_state.ctx = restored[1]
+        else:
+            st.session_state.ctx = Context(bundle.agent)
+
+
+def _render_source(src: dict) -> None:
+    """Render one cited passage, flagging ones pulled in via a reference link."""
+    via = src.get("via_reference")
+    tag = f" · ↪ via {via}" if via else ""
+    st.markdown(
+        f"**{src['book']}** — {src['chapter']} — p.{src['page']}{tag}  \n> {src['snippet']}"
+    )
 
 
 def _fmt_tool(kind: str, name: str, payload: object) -> str:
@@ -58,14 +88,30 @@ with st.sidebar:
     if st.button("🔄 Re-index books/", use_container_width=True):
         with st.spinner("Ingesting PDFs (local embeddings, no API calls)…"):
             summary = ingest()
-        # Force a fresh agent so it sees the new index.
-        for key in ("bundle", "ctx", "messages"):
+        # Node ids change on rebuild, so the saved session is stale — drop it.
+        reset_session()
+        # Force a fresh engine/agent so they see the new index.
+        for key in ("engine", "bundle", "ctx", "messages"):
             st.session_state.pop(key, None)
-        st.success(f"Indexed {summary['num_books']} book(s), {summary['num_chunks']} chunk(s).")
+        st.success(
+            f"Indexed {summary['num_books']} book(s), {summary['num_chunks']} chunk(s), "
+            f"{summary['num_edges']} reference link(s)."
+        )
+        st.rerun()
+
+    if st.button("🗑️ Reset conversation", use_container_width=True):
+        reset_session()
+        st.session_state.messages = []
+        # Drop the agent memory so it rebuilds fresh next agentic turn.
+        bundle = st.session_state.get("bundle")
+        if bundle is not None:
+            st.session_state.ctx = Context(bundle.agent)
         st.rerun()
 
     st.divider()
-    st.toggle("🐞 Debug: show tool calls", key="debug")
+    st.toggle("🤖 Agentic mode", key="agentic", value=False)
+    st.toggle("🔗 One-hop reference expansion", key="expand_refs", value=True)
+    st.toggle("🐞 Debug: show retrieval steps", key="debug")
     st.caption(f"LLM: `{config.LLM_MODEL}` · Embeddings: `{config.EMBED_MODEL}` (local)")
 
 # --- Main chat -----------------------------------------------------------
@@ -75,7 +121,7 @@ if not _indexed_books():
     st.warning("Add PDFs to the `books/` folder, then click **Re-index books/**.")
     st.stop()
 
-_ensure_agent()
+_ensure_engine()
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
@@ -86,19 +132,17 @@ for msg in st.session_state.messages:
         if msg.get("sources"):
             with st.expander(f"Sources ({len(msg['sources'])})"):
                 for src in msg["sources"]:
-                    st.markdown(
-                        f"**{src['book']}** — {src['chapter']} — p.{src['page']}  \n"
-                        f"> {src['snippet']}"
-                    )
+                    _render_source(src)
 
 if prompt := st.chat_input("Ask for a chapter summary or a question about the books…"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
+    agentic = st.session_state.get("agentic", False)
     debug = st.session_state.get("debug", False)
-    bundle = st.session_state.bundle
-    bundle.clear_sources()
+    engine = st.session_state.engine
+    engine.expand_references = st.session_state.get("expand_refs", True)
     trace_lines: list[str] = []
     answer_acc = {"text": ""}
 
@@ -111,14 +155,42 @@ if prompt := st.chat_input("Ask for a chapter summary or a question about the bo
             if trace_box is not None:
                 trace_box.markdown("\n\n".join(trace_lines))
 
+        def on_info(info: str) -> None:
+            trace_lines.append(f"🔎 {info}")
+            if trace_box is not None:
+                trace_box.markdown("\n\n".join(trace_lines))
+
+        def on_trace(msg: str) -> None:
+            trace_lines.append(f"🔗 {msg}")
+            if trace_box is not None:
+                trace_box.markdown("\n\n".join(trace_lines))
+
         def on_delta(delta: str) -> None:
             answer_acc["text"] += delta
             answer_box.markdown(answer_acc["text"] + "▌")
 
+        # Surface graph traversal (one-hop expansion) in the debug trace, in
+        # both modes — the engine drives retrieval for each.
+        engine.on_trace = on_trace if debug else None
         with st.spinner(f"Querying {config.LLM_MODEL} via OpenRouter…"):
-            answer = asyncio.run(
-                run_streaming(bundle, st.session_state.ctx, prompt, on_tool, on_delta)
-            )
+            if agentic:
+                _ensure_agent()
+                bundle = st.session_state.bundle
+                bundle.clear_sources()
+                answer = asyncio.run(
+                    run_streaming(bundle, st.session_state.ctx, prompt, on_tool, on_delta)
+                )
+                sources = list(bundle.sources)
+                ctx_to_save = st.session_state.ctx
+            else:
+                # History excludes the just-appended current turn (sent separately
+                # with its retrieved context by the synthesizer).
+                history = st.session_state.messages[:-1]
+                answer, sources = asyncio.run(
+                    run_simple_streaming(engine, prompt, history, on_delta, on_info)
+                )
+                ctx_to_save = None
+        engine.on_trace = None  # drop the per-turn closure
         answer_box.markdown(answer)
 
         # Collapse the live trace into an expander once the run finishes.
@@ -129,14 +201,10 @@ if prompt := st.chat_input("Ask for a chapter summary or a question about the bo
             ):
                 st.markdown("\n\n".join(trace_lines))
 
-        sources = list(bundle.sources)
         if sources:
             with st.expander(f"Sources ({len(sources)})"):
                 for src in sources:
-                    st.markdown(
-                        f"**{src['book']}** — {src['chapter']} — p.{src['page']}  \n"
-                        f"> {src['snippet']}"
-                    )
+                    _render_source(src)
 
     st.session_state.messages.append(
         {
@@ -146,3 +214,6 @@ if prompt := st.chat_input("Ask for a chapter summary or a question about the bo
             "trace": trace_lines if debug else [],
         }
     )
+    # Persist the transcript (+ agent memory in agentic mode) so the chat
+    # survives a restart.
+    save_session(st.session_state.messages, ctx_to_save)

@@ -8,6 +8,8 @@ order for summarization.
 
 from __future__ import annotations
 
+import json
+
 import chromadb
 from llama_index.core import StorageContext, VectorStoreIndex
 from llama_index.core.schema import TextNode
@@ -66,6 +68,33 @@ def get_all_nodes() -> list[TextNode]:
         TextNode(id_=id_, text=text or "", metadata=meta or {})
         for id_, text, meta in zip(ids, docs, metas, strict=True)
     ]
+
+
+def get_nodes_by_ids(ids: list[str]) -> list[TextNode]:
+    """Fetch specific chunks by id (used to follow reference-graph edges)."""
+    if not ids:
+        return []
+    res = _collection().get(ids=ids, include=["documents", "metadatas"])
+    got_ids = res.get("ids") or []
+    docs = res.get("documents") or []
+    metas = res.get("metadatas") or []
+    return [
+        TextNode(id_=id_, text=text or "", metadata=meta or {})
+        for id_, text, meta in zip(got_ids, docs, metas, strict=True)
+    ]
+
+
+def save_reference_graph(graph: dict) -> None:
+    """Persist the cross-reference adjacency map as JSON."""
+    config.STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+    config.REFERENCE_GRAPH_PATH.write_text(json.dumps(graph, indent=2))
+
+
+def load_reference_graph() -> dict:
+    """Load the cross-reference graph, or ``{}`` if it has not been built yet."""
+    if config.REFERENCE_GRAPH_PATH.exists():
+        return json.loads(config.REFERENCE_GRAPH_PATH.read_text())
+    return {}
 
 
 def get_chapter_chunks(book: str, chapter: str) -> list[tuple[dict, str]]:

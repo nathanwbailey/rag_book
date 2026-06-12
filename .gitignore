@@ -15,5 +15,8 @@ storage/
 # Local model / HF caches
 .cache/
 
+# Editor
+.vscode/
+
 # Claude Code local settings
 .claude/settings.local.json

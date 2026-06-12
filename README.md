@@ -9,7 +9,10 @@ how to search the documents and reports the best answer.
   tool-calling slug from https://openrouter.ai/models?max_price=0.
 - **Embeddings:** local `BAAI/bge-base-en-v1.5` — offline, no extra key.
 - **Vector store:** Chroma (persisted under `storage/`).
-- **UI:** Streamlit chat with source citations.
+- **Reference graph:** chunks linked by in-text cross-references ("see Chapter 5",
+  "p. 42"), followed one hop at query time for extra context.
+- **UI:** Streamlit chat with source citations, persistent conversation, and a
+  one-hop toggle.
 - **Tooling:** `uv` + `ruff`.
 
 ## Search architecture
@@ -22,6 +25,42 @@ Each query runs a three-stage hybrid pipeline:
 4. **Cross-encoder reranker** (`cross-encoder/ms-marco-MiniLM-L-6-v2`) — rescores the fused top-N chunks before passing them to the LLM
 
 The LLM then synthesizes a grounded answer with inline citations.
+
+### History-aware query rewriting
+
+In simple mode, a context-dependent follow-up is condensed into a standalone
+query before retrieval. Ask *"what is chronic pain?"* then *"how can I reduce
+it?"* and the second question is rewritten to *"how can I reduce chronic pain"*
+so BM25/vector search has the missing subject. The rewrite uses the last few
+turns, no-ops on the first turn (no extra LLM call), degrades to the original on
+any failure, and is shown in the debug trace as `rewrote query → …`. (Agentic
+mode doesn't need this — its tool-calling LLM already resolves context from its
+conversation memory.)
+
+### One-hop reference expansion
+
+At ingest time a **cross-reference graph** is built (no LLM): each chunk is scanned
+for in-text references like "see Chapter 5" or "as on p. 42" and linked to the
+chunks that make up that chapter/page **in the same book**. Chapter references
+resolve via the book's printed chapter numbers (parsed from the numbered chapter
+titles), so they line up even though our internal numbering also counts front
+matter; page references map onto the PDF page and are best-effort. The graph is
+saved to `storage/reference_graph.json`.
+
+When **One-hop reference expansion** is enabled (sidebar toggle, on by default),
+the reranked top passages are expanded with their referenced neighbours before
+synthesis. Passages pulled in this way are flagged in **Sources** with `↪ via …`.
+Cross-references are sparse in most prose, so this fires only when a referencing
+passage is among the top hits.
+
+### Persistent conversation
+
+The chat transcript **and** the agent's memory are saved to
+`storage/session.json` after each turn (the LlamaIndex `Context` is serialized
+via `JsonSerializer`), so closing and reopening the app resumes the same
+conversation — including follow-ups that rely on earlier turns. Use **Reset
+conversation** in the sidebar to clear it. Re-indexing also resets the session,
+since chunk ids change on rebuild.
 
 ## LLM-call boundary
 
@@ -81,10 +120,12 @@ Knobs live in [rag_book/config.py](rag_book/config.py): `LLM_MODEL` (or
 app.py                  Streamlit chat UI
 rag_book/
   config.py             Paths, model names, lazy model initialisation
-  agent.py              FunctionAgent + search_books / read_chapter tools
-  index.py              Chroma-backed VectorStoreIndex helpers
-  ingest.py             PDF → chunks → embeddings → Chroma
+  agent.py              FunctionAgent + tools + one-hop ReferenceExpander
+  index.py              Chroma-backed VectorStoreIndex + reference-graph helpers
+  ingest.py             PDF → chunks → embeddings → Chroma (+ reference graph)
   pdf_loader.py         PyMuPDF loader with chapter detection via PDF TOC
+  references.py         Cross-reference extraction + graph builder (no LLM)
+  session.py            Persist/restore chat transcript + agent memory
 scripts/
   ingest.py             CLI entry point: python -m scripts.ingest
 ```

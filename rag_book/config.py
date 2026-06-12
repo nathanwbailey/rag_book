@@ -21,6 +21,10 @@ BOOKS_DIR = ROOT / "books"
 STORAGE_DIR = ROOT / "storage"
 CHROMA_DIR = STORAGE_DIR / "chroma"
 MANIFEST_PATH = STORAGE_DIR / "chapters_manifest.json"
+# Cross-reference graph (node_id -> referenced node_ids), built at ingest time.
+REFERENCE_GRAPH_PATH = STORAGE_DIR / "reference_graph.json"
+# Persisted chat session (transcript + serialized agent Context).
+SESSION_PATH = STORAGE_DIR / "session.json"
 COLLECTION_NAME = "books"
 
 # --- Models --------------------------------------------------------------

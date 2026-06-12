@@ -10,8 +10,9 @@ import json
 from llama_index.core.node_parser import SentenceSplitter
 
 from . import config
-from .index import build_index, reset_collection
+from .index import build_index, reset_collection, save_reference_graph
 from .pdf_loader import load_books
+from .references import build_reference_graph
 
 
 def _write_manifest(documents) -> dict[str, list[str]]:
@@ -45,9 +46,14 @@ def ingest() -> dict:
     build_index(nodes)
     manifest = _write_manifest(documents)
 
+    # Build the cross-reference graph from the same nodes (no LLM calls).
+    graph = build_reference_graph(nodes)
+    save_reference_graph(graph)
+
     return {
         "books": list(manifest.keys()),
         "num_books": len(manifest),
         "num_pages": len(documents),
         "num_chunks": len(nodes),
+        "num_edges": sum(len(edges) for edges in graph.values()),
     }
