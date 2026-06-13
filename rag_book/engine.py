@@ -132,7 +132,10 @@ class ReferenceExpander(BaseNodePostprocessor):
                     continue
                 present.add(target_id)
                 src_page = src.metadata.get("page", "?")
-                via = f"p.{src_page} → {edge['ref_type']} {edge['ref_value']}"
+                if edge["ref_type"] == "related":
+                    via = f"related to {src.metadata.get('book_title', '?')} p.{src_page}"
+                else:
+                    via = f"p.{src_page} → {edge['ref_type']} {edge['ref_value']}"
                 meta = dict(target.metadata)
                 meta["via_reference"] = via
                 node = TextNode(id_=target.node_id, text=target.text, metadata=meta)

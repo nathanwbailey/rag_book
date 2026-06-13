@@ -95,7 +95,8 @@ with st.sidebar:
             st.session_state.pop(key, None)
         st.success(
             f"Indexed {summary['num_books']} book(s), {summary['num_chunks']} chunk(s), "
-            f"{summary['num_edges']} reference link(s)."
+            f"{summary['num_edges']} reference link(s), "
+            f"{summary['num_bridges']} cross-book bridge(s)."
         )
         st.rerun()
 
