@@ -71,6 +71,8 @@ def _fmt_tool(kind: str, name: str, payload: object) -> str:
     text = str(payload).replace("\n", " ")
     if len(text) > 300:
         text = text[:300] + "…"
+    if kind == "error":
+        return f"⚠️ **error** `{name}` → {text}"
     return f"↳ **result** `{name}` → {text}"
 
 

@@ -76,7 +76,7 @@ def _match_title(query_tokens: list[str], candidates: list[str]) -> str | None:
 
     A title matches only when its name appears verbatim as a contiguous phrase
     in the query — we match on the part before any ``:`` subtitle (the
-    distinctive anchor, e.g. "Addicted to Anxiety" or "SECTION 2"). When several
+    distinctive anchor, e.g. "The Great Gatsby" or "Part II"). When several
     titles match, the longest (most specific) one wins. No fuzzy matching.
     """
     best: str | None = None
@@ -341,13 +341,15 @@ class RagEngine:
         return book, chapter
 
     # --- Convenience used by the agent tools ----------------------------
-    def search(
+    def retrieve_passages(
         self, query: str, book: str | None = None, chapter: str | None = None
     ) -> tuple[str, list[dict]]:
-        """Retrieve + synthesize (non-streaming). Returns (answer, sources)."""
+        """Retrieve passages WITHOUT synthesizing (no LLM call). Returns the
+        citation-tagged passages and their sources. The agent synthesizes the
+        final answer itself, so the search tool must not burn a second LLM call
+        here — that nested call is the rate-limited free model's first failure."""
         nodes = self.retrieve(query, book=book, chapter=chapter)
-        answer = self.synthesize(query, nodes)
-        return answer, self.nodes_to_sources(nodes)
+        return self._format_context(nodes), self.nodes_to_sources(nodes)
 
     def read_chapter(self, book: str, chapter: str) -> tuple[str, list[dict]]:
         """Return the full text of one chapter (exact titles), page-ordered."""

@@ -25,7 +25,12 @@ from .engine import RagEngine
 SYSTEM_PROMPT = """\
 You are a research assistant for a personal library of books that have been \
 indexed for retrieval. Answer ONLY from the books via your tools — never from \
-prior knowledge. If the tools do not contain the answer, say so plainly.
+prior knowledge.
+
+When a tool returns passages or a synthesized answer with sources, that IS the \
+material to answer from — use it. Do NOT reply that you couldn't find anything \
+when a tool just returned relevant content with sources. Only say the library \
+lacks the answer when the tools genuinely return nothing relevant.
 
 Tool guidance:
 - "Summarize chapter X of <book>" or any chapter-level request -> use \
@@ -52,26 +57,17 @@ class AgentBundle:
         self.sources.clear()
 
 
-def _format_sources(sources: list[dict]) -> str:
-    """Render retrieved sources as the inline list the agent sees after a tool."""
-    lines = ["", "Sources:"]
-    for src in sources:
-        via = f" [↪ via {src['via_reference']}]" if src.get("via_reference") else ""
-        lines.append(f"- {src['book']} — {src['chapter']} — p.{src['page']}{via}: {src['snippet']}")
-    return "\n".join(lines)
-
-
 def build_agent(engine: RagEngine) -> AgentBundle:
     """Construct the tool-calling agent over the shared retrieval engine."""
     bundle = AgentBundle(agent=None)  # type: ignore[arg-type]
 
     def search_books(query: str, book: str | None = None) -> str:
         """Hybrid search: BM25 + vector, fused with RRF and cross-encoder
-        reranked. Optionally restrict to one book by exact title. Returns a
-        synthesized answer plus the source passages."""
-        answer, sources = engine.search(query, book=book)
+        reranked. Optionally restrict to one book by exact title. Returns the
+        retrieved passages (citation-tagged) for you to answer from."""
+        passages, sources = engine.retrieve_passages(query, book=book)
         bundle.sources.extend(sources)
-        return answer.strip() + "\n" + _format_sources(sources)
+        return passages
 
     def list_books() -> str:
         """List the titles of all indexed books."""
@@ -111,15 +107,25 @@ async def run_streaming(
     """Run the agent, surfacing progress via callbacks. Returns the final answer.
 
     ``on_tool(kind, name, payload)`` fires for each tool step — ``kind`` is
-    ``"call"`` (payload = kwargs dict) or ``"result"`` (payload = output text).
-    ``on_delta(text)`` fires for each streamed token of the model's output.
+    ``"call"`` (payload = kwargs dict), ``"result"`` (payload = output text), or
+    ``"error"`` (payload = exception detail). ``on_delta(text)`` fires for each
+    streamed token of the model's output.
     """
     handler = bundle.agent.run(prompt, ctx=ctx)
     async for event in handler.stream_events():
         if isinstance(event, ToolCallResult):
             if on_tool is not None:
-                output = getattr(event.tool_output, "content", event.tool_output)
-                on_tool("result", event.tool_name, str(output))
+                out = event.tool_output
+                if getattr(out, "is_error", False):
+                    # The agent swallows tool exceptions into an error ToolOutput
+                    # (content = str(exc), often empty). Surface it so a failing
+                    # tool shows up in the trace instead of a blank result line.
+                    exc = getattr(out, "exception", None)
+                    detail = str(out.content).strip() or (repr(exc) if exc else "(no detail)")
+                    on_tool("error", event.tool_name, detail)
+                else:
+                    output = getattr(out, "content", out)
+                    on_tool("result", event.tool_name, str(output))
         elif isinstance(event, ToolCall):
             if on_tool is not None:
                 on_tool("call", event.tool_name, dict(event.tool_kwargs))

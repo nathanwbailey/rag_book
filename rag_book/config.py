@@ -98,4 +98,8 @@ def get_llm():
         is_function_calling_model=True,
         max_tokens=LLM_MAX_TOKENS,
         context_window=LLM_CONTEXT_WINDOW,
+        # Free OpenRouter endpoints rate-limit aggressively (HTTP 429). Retry
+        # with backoff so a transient limit doesn't fail the whole turn.
+        max_retries=5,
+        timeout=120,
     )
