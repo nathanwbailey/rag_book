@@ -46,6 +46,16 @@ CHUNK_SIZE = 768
 CHUNK_OVERLAP = 128
 TOP_K = 6
 
+# --- Cross-book semantic bridges -----------------------------------------
+# At ingest time, each content chunk is linked to its most similar chunks in
+# OTHER books (cosine similarity on the local embeddings) so the one-hop
+# expander can surface cross-book connections. BGE embeddings are anisotropic
+# (cross-book pairs sit around ~0.80 by default), so the floor is high and
+# top-k per chunk keeps the graph bounded. Tune the floor up for fewer/tighter
+# bridges, down for broader coverage.
+SEMANTIC_BRIDGE_THRESHOLD = 0.86
+SEMANTIC_BRIDGE_TOP_K = 3
+
 _embed_configured = False
 
 

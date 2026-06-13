@@ -84,6 +84,20 @@ def get_nodes_by_ids(ids: list[str]) -> list[TextNode]:
     ]
 
 
+def get_embeddings() -> dict[str, list[float]]:
+    """Return ``node_id -> embedding`` for every chunk in the store.
+
+    Reuses the vectors already computed at index time (no re-embedding) so the
+    semantic-bridge builder can measure chunk-to-chunk similarity.
+    """
+    res = _collection().get(include=["embeddings"])
+    ids = res.get("ids") or []
+    embs = res.get("embeddings")
+    if embs is None or len(embs) == 0:
+        return {}
+    return {id_: list(emb) for id_, emb in zip(ids, embs, strict=True)}
+
+
 def save_reference_graph(graph: dict) -> None:
     """Persist the cross-reference adjacency map as JSON."""
     config.STORAGE_DIR.mkdir(parents=True, exist_ok=True)

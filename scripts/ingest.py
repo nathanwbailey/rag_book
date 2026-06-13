@@ -11,8 +11,9 @@ def main() -> None:
     summary = ingest()
     print(
         f"Indexed {summary['num_books']} book(s), "
-        f"{summary['num_pages']} page(s), {summary['num_chunks']} chunk(s), "
-        f"{summary['num_edges']} reference link(s)."
+        f"{summary['num_chunks']} chunk(s), "
+        f"{summary['num_edges']} reference link(s), "
+        f"{summary['num_bridges']} cross-book bridge(s)."
     )
     for book in summary["books"]:
         print(f"  - {book}")
