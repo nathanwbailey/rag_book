@@ -29,8 +29,8 @@ The LLM then synthesizes a grounded answer with inline citations.
 ### History-aware query rewriting
 
 In simple mode, a context-dependent follow-up is condensed into a standalone
-query before retrieval. Ask *"what is chronic pain?"* then *"how can I reduce
-it?"* and the second question is rewritten to *"how can I reduce chronic pain"*
+query before retrieval. Ask *"what is photosynthesis?"* then *"how does it
+work?"* and the second question is rewritten to *"how does photosynthesis work"*
 so BM25/vector search has the missing subject. The rewrite uses the last few
 turns, no-ops on the first turn (no extra LLM call), degrades to the original on
 any failure, and is shown in the debug trace as `rewrote query → …`. (Agentic

@@ -10,8 +10,8 @@ followed one hop at query time):
   most similar chunks in *other* books, reusing the index-time embeddings.
 
 Chapter references are resolved via the book's *printed* chapter numbers, which
-are parsed from the numbered chapter titles (e.g. "1. The Manifestations of
-TMS"). This avoids matching against our internal ``chapter_num``, which also
+are parsed from the numbered chapter titles (e.g. "1. Introduction" or
+"Chapter 1: ..."). This avoids matching against our internal ``chapter_num``, which also
 counts front matter (copyright/preface/…) and so won't line up with the book's
 own numbering. Page references map directly onto the PDF page number and are
 therefore best-effort — printed page N rarely equals PDF page N.
@@ -43,10 +43,17 @@ _NOISE_TITLES = frozenset(
         "useful resources",
         "discover more",
         "front matter",
-        "further reading: books and scientific studies",
+        "glossary",
+        "bibliography",
     }
 )
-_NOISE_PREFIXES = ("praise for", "advance praise", "also by", "by the same author")
+_NOISE_PREFIXES = (
+    "praise for",
+    "advance praise",
+    "also by",
+    "by the same author",
+    "further reading",
+)
 
 # "Chapter 5", "chapters 5" — capture the number.
 _CHAPTER_RE = re.compile(r"\bchapters?\s+(\d{1,4})\b", re.IGNORECASE)
