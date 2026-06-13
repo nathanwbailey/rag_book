@@ -11,11 +11,13 @@ dependencies = [
     "llama-index-vector-stores-chroma>=0.4.0",
     "llama-index-retrievers-bm25>=0.5.0",
     "chromadb>=0.5.0",
+    "numpy>=1.26",
     "pymupdf>=1.24.0",
     "sentence-transformers>=3.0.0",
     "streamlit>=1.39.0",
     "python-dotenv>=1.0.0",
     "torchvision>=0.27.0",
+    "watchdog>=6.0.0",
 ]
 
 [dependency-groups]
