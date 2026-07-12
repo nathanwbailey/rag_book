@@ -75,3 +75,4 @@ Always use uv-wrapped commands. Running python or streamlit directly can hit the
 ## Working rule
 
 Trust the instructions above first. Only search further if a needed detail is missing or you discover the instructions are out of date.
+

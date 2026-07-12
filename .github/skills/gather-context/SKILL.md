@@ -7,12 +7,9 @@ description: Gather the nearest useful file context before answering questions o
 
 Follow this order and stop at the first source that is sufficient:
 
-1. Check whether a `.github/instructions/*.instructions.md` file with an
-   `applyTo` pattern matching the target file is already in this conversation's
-   context.
-2. If the target is a repository file, check whether a summary already exists
+1. If the target is a repository file, check whether a summary already exists
    at the mirrored path under `summaries/`.
-3. If neither source is sufficient, invoke the Explore skill with the target
+2. If neither source is sufficient, invoke the Explore skill with the target
    file as the anchor and the smallest useful local context as the goal, then
    invoke the Summarize skill to write a reusable summary.
 
